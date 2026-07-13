@@ -46,9 +46,9 @@ def _align(arm, state, new_position, name, threshold, trigger=None):
     if trigger == "gripper":  # Check if gripper is active (threshold ~ -10 deg)
         gripper_position = new_position[-1]  # Last value is gripper's position
         if name == "right_arm":
-            is_gripping = gripper_position.as_py() > np.deg2rad(-5)
+            is_gripping = gripper_position > np.deg2rad(-5)
         elif name == "left_arm":
-            is_gripping = gripper_position.as_py() < np.deg2rad(5)
+            is_gripping = gripper_position < np.deg2rad(5)
         if not is_gripping:
             return False
 
@@ -78,6 +78,47 @@ def _env_flag(name, default=False):
     if v is None:
         return default
     return v.strip().lower() in ("1", "true", "yes", "on")
+
+
+QPOS_TYPE = pa.struct([("qpos", pa.list_(pa.float32()))])
+
+STATE_TYPE = pa.struct(
+    [
+        ("qpos", pa.list_(pa.float32())),
+        ("qvel", pa.list_(pa.float32())),
+        ("qtorque", pa.list_(pa.float32())),
+        ("tmos", pa.list_(pa.int32())),
+        ("trotor", pa.list_(pa.int32())),
+    ]
+)
+
+
+def build_qpos_output(qpos: np.ndarray) -> pa.Array:
+    """Wrap a qpos array as a length-1 StructArray: [{"qpos": [...]}]."""
+    return pa.array([{"qpos": qpos}], type=QPOS_TYPE)
+
+
+def build_state_output(state) -> pa.Array:
+    """Wrap a state dict as a length-1 StructArray: [{"qpos": [...], ...}]."""
+    return pa.array(
+        [
+            {
+                "qpos": state["qpos"],
+                "qvel": state["qvel"],
+                "qtorque": state["qtorque"],
+                "tmos": state["tmos"],
+                "trotor": state["trotor"],
+            }
+        ],
+        type=STATE_TYPE,
+    )
+
+
+def extract_values(value: pa.Array, key: str) -> np.ndarray:
+    """Read `key` from a length-1 StructArray, or a flat array as-is."""
+    if pa.types.is_struct(value.type):
+        value = value.field(key)[0].values
+    return np.array(value, dtype=np.float32)
 
 
 def main():
@@ -171,44 +212,34 @@ def main():
             )
             node.send_output(
                 "position",
-                pa.array(current_position, type=pa.float32()),
+                build_qpos_output(np.asarray(current_position, dtype=np.float32)),
             )
         elif event_id == "request_state":
             if status is ArmStatus.STOPPED:
                 continue
             state = arm.fetch_state(refresh=args.refresh_every_request)
-            node.send_output(
-                "state",
-                pa.StructArray.from_arrays(
-                    [
-                        pa.array(state["qpos"], type=pa.float32()),
-                        pa.array(state["qvel"], type=pa.float32()),
-                        pa.array(state["qtorque"], type=pa.float32()),
-                        pa.array(state["tmos"], type=pa.int32()),
-                        pa.array(state["trotor"], type=pa.int32()),
-                    ],
-                    names=["qpos", "qvel", "qtorque", "tmos", "trotor"],
-                ),
-            )
+            node.send_output("state", build_state_output(state))
         elif event_id == "move_position":
             if status is ArmStatus.STOPPED:
                 continue
             value = event["value"]
             if isinstance(value, pa.StructArray):
-                new_position = value.field("new_position")
+                names = value.type.names
+                if "qpos" in names:
+                    new_position = extract_values(value, "qpos")
+                else:
+                    new_position = np.array(
+                        value.field("new_position"), dtype=np.float32
+                    )
                 # TODO: We use this for safety check later.
                 # other_arm_position = value.field("other_arm_position")
             else:
-                new_position = value
+                new_position = np.array(value, dtype=np.float32)
                 # other_arm_position = None
 
             if status is ArmStatus.ALIGNED:
                 diverged = np.any(
-                    np.abs(
-                        np.asarray(new_position, dtype=np.float32)[:-1]
-                        - arm.last_command[:-1]
-                    )
-                    > align_threshold
+                    np.abs(new_position[:-1] - arm.last_command[:-1]) > align_threshold
                 )
                 if diverged:
                     status = ArmStatus.STARTED
