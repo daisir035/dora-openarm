@@ -2,6 +2,17 @@
 
 A [Dora](https://dora-rs.ai/) node that controls OpenArm.
 
+This fork installs the ZK-enabled driver chain directly from GitHub. Select
+the bundled six-joint configuration with:
+
+```yaml
+nodes:
+  - id: follower-right
+    build: pip install "git+https://github.com/daisir035/dora-openarm.git@main"
+    path: dora-openarm
+    args: "--side right --config openarm_zk_6dof"
+```
+
 ## Usage
 
 Use this node from a dora-rs dataflow configuration. For a full configuration

@@ -21,7 +21,10 @@ license = { text = "Apache-2.0" }
 readme = "README.md"
 requires-python = ">=3.10"
 
-dependencies = ["dora-rs >= 0.5.0", "openarm-driver >= 0.2.0"]
+dependencies = [
+  "dora-rs >= 0.5.0",
+  "openarm-driver @ git+https://github.com/daisir035/openarm_driver.git@main",
+]
 
 [dependency-groups]
 dev = [
@@ -33,9 +36,9 @@ dev = [
 dora-openarm = "dora_openarm.main:main"
 
 [project.urls]
-Changelog = "https://github.com/enactic/dora-openarm/releases"
-Issues = "https://github.com/enactic/dora-openarm/issues"
-Repository = "https://github.com/enactic/dora-openarm.git"
+Changelog = "https://github.com/daisir035/dora-openarm/releases"
+Issues = "https://github.com/daisir035/dora-openarm/issues"
+Repository = "https://github.com/daisir035/dora-openarm.git"
 
 [tool.ruff.lint]
 extend-select = [
